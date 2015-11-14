@@ -187,6 +187,7 @@ class Clipboard():
     def _b642pixbuf(self, b64):
         pixloader = gtk.gdk.PixbufLoader('png')
         pixloader.write(base64.b64decode(b64))
+        pixloader.close()
         return pixloader.get_pixbuf()
 
 
