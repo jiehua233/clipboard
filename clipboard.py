@@ -168,7 +168,12 @@ class Clipboard():
     def get_image(self):
         content = None
         if self.clipboard.wait_is_image_available():
-            content = self._pixbuf2b64(self.clipboard.wait_for_image())
+            pixbuf = self.clipboard.wait_for_image()
+            # Mac 下测试获取截图为空
+            if pixbuf is None:
+                pixbuf = self.clipboard.wait_for_contents('image/tiff').get_pixbuf()
+
+            content = self._pixbuf2b64(pixbuf)
 
         return content
 
