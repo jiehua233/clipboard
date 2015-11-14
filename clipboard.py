@@ -139,7 +139,7 @@ class ClipboardThread(threading.Thread):
         # 重发计数器
         counter = 10
         while counter > 0:
-            print 'Sending clipboard data to %s ...' % self.remote_addr
+            print 'Sending data to %s ...' % self.remote_addr
             try:
                 r = requests.post(url, content)
                 if r.status_code == 200:
@@ -147,7 +147,7 @@ class ClipboardThread(threading.Thread):
                     print r.text
                     break
             except requests.exceptions.ConnectionError:
-                print 'Send data fail !'
+                print 'Send fail !'
                 time.sleep(2)
 
 
