@@ -66,7 +66,7 @@ class ServerThread(threading.Thread):
         self.port = port
 
     def run(self):
-        print "Staring Service on port: %s" % self.port
+        print "Staring Service on port: %s \n" % self.port
         server = BaseHTTPServer.HTTPServer(('', self.port), ClipboardHandler)
         server.serve_forever()
 
@@ -129,25 +129,26 @@ class ClipboardThread(threading.Thread):
 
             if clip_text:
                 if clip_text != ClipData:
-                    lock_set_clipdata(clip_text)
                     self.sync_loop('text', clip_text)
             elif clip_image:
                 if clip_image != ClipData:
-                    lock_set_clipdata(clip_image)
                     self.sync_loop('image', clip_image)
 
     def sync_loop(self, mimetype, content):
         url = 'http://%s/%s' % (self.remote_addr, mimetype)
-        while True:
+        # 重发计数器
+        counter = 10
+        while counter > 0:
             print 'Sending clipboard data to %s ...' % self.remote_addr
             try:
                 r = requests.post(url, content)
                 if r.status_code == 200:
+                    lock_set_clipdata(content)
                     print r.text
                     break
             except requests.exceptions.ConnectionError:
                 print 'Send data fail !'
-                time.sleep(1)
+                time.sleep(2)
 
 
 class Clipboard():
