@@ -47,7 +47,7 @@ def parse_cmdline():
 """ Ping the remote server """
 def connect(remote_addr):
     while True:
-        print 'Try connecting to %s ...' % remote_addr
+        print 'Connecting to %s ...' % remote_addr
         try:
             r = requests.get('http://%s' % remote_addr)
             if r.status_code == 200:
@@ -87,15 +87,14 @@ class ClipboardHandler(BaseHTTPServer.BaseHTTPRequestHandler):
             self.response(404)
 
     def set_clipboard(self):
+        print 'Receiving data...'
         content = self.get_content()
         lock_set_clipdata(content)
 
         clipboard = Clipboard()
         if self.path == '/text':
-            print 'receive text: %s' % content
             clipboard.set_text(content)
         elif self.path == '/image':
-            print 'receive image...'
             clipboard.set_image(content)
 
     def response(self, code):
@@ -140,14 +139,14 @@ class ClipboardThread(threading.Thread):
     def sync_loop(self, mimetype, content):
         url = 'http://%s/%s' % (self.remote_addr, mimetype)
         while True:
-            print 'Trying to send clipboard data to %s ...' % self.remote_addr
+            print 'Sending clipboard data to %s ...' % self.remote_addr
             try:
                 r = requests.post(url, content)
                 if r.status_code == 200:
                     print r.text
                     break
             except requests.exceptions.ConnectionError:
-                print 'Send clipboard data to %s fail...' % self.remote_addr
+                print 'Send data fail !'
                 time.sleep(1)
 
 
@@ -158,7 +157,6 @@ class Clipboard():
         self.clipboard = gtk.Clipboard()
 
     def get_text(self):
-        print 'get_text'
         content = None
         if self.clipboard.wait_is_text_available():
             content = self.clipboard.wait_for_text()
