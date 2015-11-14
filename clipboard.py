@@ -155,6 +155,7 @@ class Clipboard():
 
     def __init__(self):
         self.clipboard = gtk.Clipboard()
+        self.clipboard.clear()
 
     def get_text(self):
         content = None
