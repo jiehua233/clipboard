@@ -1,24 +1,22 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import sys
+reload(sys)
+sys.setdefaultencoding("utf8")
 import time
 import StringIO
 import argparse
 import base64
 import threading
+import httplib
 import BaseHTTPServer
+import Queue
 
 try:
     import gtk
 except ImportError:
-    try:
-        # python 2
-        import Tkinter as tk
-    except ImportError:
-        # python 3
-        import tkinter as tk
-
-import requests
+    import Tkinter as tk
 
 
 """ 全局常量 """
@@ -27,27 +25,29 @@ CLIP_TEXT = 1
 CLIP_IMAGE = 2
 
 """ 全局变量 """
-ClipBoard = None    # 剪贴板对象
-ClipData = ''       # 剪贴板内容
+RecvQueue = Queue.Queue(100000)    # 接收到的数据
+SendQueue = Queue.Queue(100000)    # 即将发送的数据
 
 
 def main():
-    global ClipBoard
-    ClipBoard = init_clipboard()
-
+    # 解析命令行参数
     args = parse_cmdline()
+
+    # 启动数据接收线程
     server_thread = ServerThread(args.local)
     server_thread.daemon = True
     server_thread.start()
+    time.sleep(0.1)
 
-    connect(args.remote)
+    # 启动数据发送线程
+    client_thread = ClientThread(args.remote)
+    client_thread.daemon = True
+    client_thread.start()
+    time.sleep(0.1)
 
-    clip_thread = ClipboardThread(args.remote)
-    clip_thread.daemon = True
-    clip_thread.start()
-
-    while True:
-        time.sleep(1)
+    # 主线程，检测剪贴板数据
+    clipboard = Clipboard()
+    clipboard.run()
 
 
 def parse_cmdline():
@@ -61,58 +61,120 @@ def parse_cmdline():
     return args
 
 
-def init_clipboard():
-    """初始化剪贴板
+class Clipboard():
+    """ 剪贴板监听类 """
 
-    优先使用gtk，如果该库不存在则使用python内置Tkinter """
-    clipboard = None
-    try:
-        clipboard = ClipboardGTK()
-    except NameError:
-        clipboard = ClipboardTK()
-
-    return clipboard
-
-
-def connect(remote):
-    """ Ping the remote server """
-    while True:
-        print 'Connecting to %s ...' % remote
+    def __init__(self):
+        # 初始化剪贴板，优先使用gtk，如果该库不存在则使用python内置Tkinter
         try:
-            r = requests.get('http://%s' % remote)
-            if r.status_code == 200:
-                print r.text
-                break
-        except requests.exceptions.ConnectionError:
-            print 'Connect fail !'
+            self.clipboard = ClipboardGTK()
+        except NameError:
+            self.clipboard = ClipboardTK()
+
+        # 剪贴板数据
+        self.clipdata = ''
+
+    def run(self):
+        global RecvQueue, SendQueue
+        while True:
+            # 剪贴板数据是否发生变化
+            mimetype, content = self.clipboard.get_content()
             time.sleep(1)
+            print 'clip data:', content
+            if content is not None and content != self.clipdata:
+                SendQueue.put((mimetype, content))
+                self.clipdata = content
+
+            # 是否有数据发送过来
+            try:
+                print '\n', RecvQueue.qsize()
+                mimetype, content = RecvQueue.get(timeout=2)
+                #print 'receive but not set'
+                self.clipboard.set_content(mimetype, content)
+            except Queue.Empty:
+                print 'RecvQueue Empty'
+                pass
 
 
-def lock_set_clipdata(content):
-    """ 线程中改变全局变量加锁 """
-    global ClipData
-    lock = threading.Lock()
-    lock.acquire()
-    ClipData = content
-    lock.release()
+class ClientThread(threading.Thread):
+    """ 数据发送线程 """
+
+    def __init__(self, remote):
+        threading.Thread.__init__(self)
+        self.remote = remote
+
+    def run(self):
+        #self.ping(self.remote)
+        global SendQueue
+        mimetype, content, success = None, None, True
+        while True:
+            # 阻塞进程
+            try:
+                mimetype, content = SendQueue.get(timeout=2)
+                success = False
+            except Queue.Empty:
+                pass
+
+            # 发送是否成功，不成功持续发送
+            if not success:
+                success = self.send(mimetype, content)
+
+    def ping(self, remote):
+        """ Ping the remote server """
+        while True:
+            print 'Ping %s ...' % remote
+            try:
+                resp = self.request(remote)
+                if resp.status == 200:
+                    print 'Remote(%s): %s' % (remote, resp.read())
+                    break
+            except Exception as e:
+                print 'Ping fail: %s' % e
+                time.sleep(1)
+
+    def request(self, remote, method='GET', url='/', body=''):
+        conn = httplib.HTTPConnection(remote)
+        conn.request(method, url, body)
+        resp = conn.getresponse()
+        conn.close()
+        return resp
+
+    def send(self, mimetype, content):
+        success = False
+        url = '/'
+        if mimetype == CLIP_TEXT:
+            url = '/text'
+        elif mimetype == CLIP_IMAGE:
+            url = '/image'
+
+        print 'Sending data to %s ...' % self.remote
+        try:
+            resp = self.request(self.remote, 'POST', '%s' % url, content)
+            if resp.status == 200:
+                success = True
+                print 'Remote(%s): %s' % (self.remote, resp.read())
+        except Exception as e:
+            print 'Send fail: %s' % e
+
+        return success
 
 
 class ServerThread(threading.Thread):
-    """ 通讯线程 """
+    """ 数据接收线程 """
 
     def __init__(self, local):
         threading.Thread.__init__(self)
         self.local = local
 
     def run(self):
-        print "Staring Service on %s \n" % self.local
+        print "Staring Service on %s" % self.local
         addr = self.local.split(':')[0]
         port = int(self.local.split(':')[1])
-        server = BaseHTTPServer.HTTPServer((addr, port), ClipboardHandler)
+        server = BaseHTTPServer.HTTPServer((addr, port), RequestHandler)
         server.serve_forever()
 
 
-class ClipboardHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.response(200)
@@ -122,73 +184,28 @@ class ClipboardHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         if self.path in ['/text', '/image']:
             self.response(200)
             self.wfile.write('done')
-            self.set_clipboard()
+
+            print 'Receiving data...'
+            if self.path == '/text':
+                mimetype = CLIP_TEXT
+            elif self.path == '/image':
+                mimetype = CLIP_IMAGE
+
+            global RecvQueue
+            RecvQueue.put((mimetype, self.get_body()))
 
         else:
             self.response(404)
-
-    def set_clipboard(self):
-        print 'Receiving data...'
-        if self.path == '/text':
-            mimetype = CLIP_TEXT
-        elif self.path == '/image':
-            mimetype = CLIP_IMAGE
-
-        global ClipBoard
-        content = self.get_content()
-        ClipBoard.set_content(mimetype, content)
-        lock_set_clipdata(content)
 
     def response(self, code):
         self.send_response(code)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
 
-    def get_content(self):
+    def get_body(self):
         length = int(self.headers.getheader('Content-length'))
         body = self.rfile.read(length)
         return body
-
-
-class ClipboardThread(threading.Thread):
-    """ 剪贴板监听,数据同步线程 """
-
-    def __init__(self, remote):
-        threading.Thread.__init__(self)
-        self.remote = remote
-
-    def run(self):
-        global ClipData, ClipBoard
-        while True:
-            mimetype, content = ClipBoard.get_content()
-            if content is None or content == ClipData:
-                time.sleep(2)
-                continue
-
-            self.sync_loop(mimetype, content)
-
-    def sync_loop(self, mimetype, content):
-        router = ''
-        if mimetype == CLIP_TEXT:
-            router = 'text'
-        elif mimetype == CLIP_IMAGE:
-            router = 'image'
-
-        url = 'http://%s/%s' % (self.remote, router)
-        # 重发计数器
-        counter = 10
-        while counter > 0:
-            print 'Sending data to %s ...' % self.remote
-            try:
-                r = requests.post(url, content)
-                if r.status_code == 200:
-                    lock_set_clipdata(content)
-                    print r.text
-                    break
-            except requests.exceptions.ConnectionError:
-                print 'Send fail !'
-                time.sleep(2)
-                counter -= 1
 
 
 class ClipboardTK():
@@ -202,7 +219,7 @@ class ClipboardTK():
 
     def get_content(self):
         text = self.get_text()
-        if text is None:
+        if text is not None:
             return CLIP_TEXT, text
 
         return CLIP_NONE, None
@@ -221,8 +238,10 @@ class ClipboardTK():
         return content
 
     def set_text(self, text):
+        print 'set:', text
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
+        print 'get:', self.root.clipboard_get()
 
 
 class ClipboardGTK():
