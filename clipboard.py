@@ -77,23 +77,18 @@ class Clipboard():
     def run(self):
         global RecvQueue, SendQueue
         while True:
+            # 是否有数据发送过来
+            try:
+                mimetype, content = RecvQueue.get(timeout=1)
+                self.clipboard.set_content(mimetype, content)
+            except Queue.Empty:
+                pass
+
             # 剪贴板数据是否发生变化
             mimetype, content = self.clipboard.get_content()
-            time.sleep(1)
-            print 'clip data:', content
             if content is not None and content != self.clipdata:
                 SendQueue.put((mimetype, content))
                 self.clipdata = content
-
-            # 是否有数据发送过来
-            try:
-                print '\n', RecvQueue.qsize()
-                mimetype, content = RecvQueue.get(timeout=2)
-                #print 'receive but not set'
-                self.clipboard.set_content(mimetype, content)
-            except Queue.Empty:
-                print 'RecvQueue Empty'
-                pass
 
 
 class ClientThread(threading.Thread):
@@ -104,13 +99,13 @@ class ClientThread(threading.Thread):
         self.remote = remote
 
     def run(self):
-        #self.ping(self.remote)
+        self.ping(self.remote)
         global SendQueue
         mimetype, content, success = None, None, True
         while True:
             # 阻塞进程
             try:
-                mimetype, content = SendQueue.get(timeout=2)
+                mimetype, content = SendQueue.get(timeout=1)
                 success = False
             except Queue.Empty:
                 pass
@@ -218,7 +213,10 @@ class ClipboardTK():
         self.root.withdraw()
 
     def get_content(self):
-        text = self.get_text()
+        self.root.after(10, self.get_text())
+        self.root.update()
+        time.sleep(0.1)
+        text = self.content
         if text is not None:
             return CLIP_TEXT, text
 
@@ -229,19 +227,15 @@ class ClipboardTK():
             self.set_text(content)
 
     def get_text(self):
-        content = None
+        self.content = None
         try:
-            content = self.root.clipboard_get()
+            self.content = self.root.clipboard_get()
         except tk._tkinter.TclError:
             pass
 
-        return content
-
     def set_text(self, text):
-        print 'set:', text
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
-        print 'get:', self.root.clipboard_get()
 
 
 class ClipboardGTK():
