@@ -83,6 +83,7 @@ class Clipboard():
             try:
                 mimetype, content = RecvQueue.get(timeout=1)
                 self.clipboard.set_content(mimetype, content)
+                self.clipdata = content
             except Queue.Empty:
                 pass
 
