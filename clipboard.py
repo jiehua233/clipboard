@@ -68,8 +68,10 @@ class Clipboard():
         # 初始化剪贴板，优先使用gtk，如果该库不存在则使用python内置Tkinter
         try:
             self.clipboard = ClipboardGTK()
+            print 'Using PYGTK...'
         except NameError:
             self.clipboard = ClipboardTK()
+            print 'Using Tkinter...'
 
         # 剪贴板数据
         self.clipdata = ''
