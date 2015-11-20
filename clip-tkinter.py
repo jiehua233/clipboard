@@ -18,6 +18,8 @@ CLIP_NONE = 0
 CLIP_TEXT = 1
 CLIP_IMAGE = 2
 
+SERVER_PORT = 34567
+
 """ 全局变量 """
 RecvQueue = Queue.Queue(100000)    # 接收到的数据
 SendQueue = Queue.Queue(100000)    # 即将发送的数据
