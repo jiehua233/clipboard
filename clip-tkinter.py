@@ -71,7 +71,7 @@ class ClientThread(threading.Thread):
     def run(self):
         self.ping(self.remote)
         global SendQueue
-        content, success = None, None, True
+        content, success = None, True
         while True:
             # 阻塞进程
             try:
