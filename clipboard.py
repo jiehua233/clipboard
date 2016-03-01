@@ -1,36 +1,47 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+#
+# @author: jiehua233@gmail.com
+#
 
 import sys
-reload(sys)
-sys.setdefaultencoding("utf8")
 import time
 import StringIO
 import argparse
 import base64
+import logging
 import threading
 import httplib
 import BaseHTTPServer
 import gtk
 
 
+reload(sys)
+sys.setdefaultencoding("utf8")
+
+
 """ 全局常量 """
 CLIP_NONE = 0
 CLIP_TEXT = 1
 CLIP_IMAGE = 2
+SERVER_PORT = 34455
 
-SERVER_PORT = 34567
 
 """ 全局变量 """
-ClipData = ""
+CLIPBOARD = None
+CLIP_DATA = ""
 
 
 def main():
     # 解析命令行参数
     args = parse_cmdline()
 
+    # clipboard
+    global CLIPBOARD
+    CLIPBOARD = ClipboardGTK()
+
     # 启动数据接收线程
-    server_thread = ServerThread(args.local)
+    server_thread = ServerThread(args.port)
     server_thread.daemon = True
     server_thread.start()
     time.sleep(0.1)
@@ -49,61 +60,59 @@ def main():
 def parse_cmdline():
     """ Parse the command line arguments """
     parser = argparse.ArgumentParser()
-    parser.add_argument('--local', type=str, default='0.0.0.0:34567',
-                        help='Specific the local server address, e.g. 172.16.2.90:34567, default is: 0.0.0.0:34567')
-    parser.add_argument('--remote', type=str, default='127.0.0.1:34567',
-                        help='Specific the remote server address, e.g. 172.16.2.95:34567, default is: 127.0.0.1:34567')
+    parser.add_argument('--port', type=int, default=SERVER_PORT,
+                        help='Specific the local server port, default is: %d' % SERVER_PORT)
+    parser.add_argument('--remote', type=str, default='127.0.0.1:%d' % SERVER_PORT,
+                        help='Specific the remote server address, default is: 127.0.0.1:%d' % SERVER_PORT)
     args = parser.parse_args()
     return args
 
+
+def get_logger():
+    logger = logging.getLogger('clipboard')
+    logger.setLevel(logging.DEBUG)
+    fmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    ch = logging.StreamHandler()
+    ch.setFormatter(fmt)
+    ch.setLevel(logging.DEBUG)
+    logger.addHandler(ch)
+    return logger
+
+
+logger = get_logger()
 
 class ClientThread(threading.Thread):
     """ 数据发送线程 """
 
     def __init__(self, remote):
         threading.Thread.__init__(self)
-        print 'Using PYGTK...'
-        if ':' not in remote:
-            self.remote = '%s:%s' % (remote, SERVER_PORT)
-        else:
-            self.remote = remote
+        logger.info('Clipboard using PYGTK...')
+        self.remote = remote if ':' in remote else '%s:%s' % (remote, SERVER_PORT)
+        self.ping()
+
+    def ping(self):
+        logger.info('Connecting %s', self.remote)
+        try:
+            resp = self.request(self.remote)
+            if resp.status == 200:
+                logger.info('%s is ok: %s', self.remote, resp.read())
+        except Exception as e:
+            logger.error('Connect fail: %s', e)
 
     def run(self):
-        self.ping(self.remote)
-        global ClipData
-        cb = ClipboardGTK()
+        global CLIP_DATA, CLIPBOARD
         content, success = None, True
         while True:
-            mimetype, content = cb.get_content()
-            if content is None or content == ClipData:
-                time.sleep(2)
+            mimetype, content = CLIPBOARD.get_content()
+            if content is None or content == CLIP_DATA:
+                time.sleep(1)
             else:
-                ClipData = content
+                CLIP_DATA = content
                 success = False
 
             # 发送是否成功，不成功持续发送
             if not success:
                 success = self.send(mimetype, content)
-
-    def ping(self, remote):
-        """ Ping the remote server """
-        while True:
-            print 'Ping %s ...' % remote
-            try:
-                resp = self.request(remote)
-                if resp.status == 200:
-                    print 'Remote(%s): %s' % (remote, resp.read())
-                    break
-            except Exception as e:
-                print 'Ping fail: %s' % e
-                time.sleep(1)
-
-    def request(self, remote, method='GET', url='/', body=''):
-        conn = httplib.HTTPConnection(remote)
-        conn.request(method, url, body)
-        resp = conn.getresponse()
-        conn.close()
-        return resp
 
     def send(self, mimetype, content):
         success = False
@@ -112,37 +121,46 @@ class ClientThread(threading.Thread):
             url = '/text'
         elif mimetype == CLIP_IMAGE:
             url = '/image'
+        else:
+            success = True
+            return
 
-        print 'Sending data to %s ...' % self.remote
+        msg = "Send %s to %s: " % (url[1:], self.remote)
         try:
             resp = self.request(self.remote, 'POST', '%s' % url, content)
             if resp.status == 200:
                 success = True
-                print 'Remote(%s): %s' % (self.remote, resp.read())
+                logger.info(msg + resp.read())
+            else:
+                logger.warn(msg + resp.status)
+
         except Exception as e:
-            print 'Send fail: %s' % e
+            logger.error(msg + str(e))
 
         return success
+
+    def request(self, remote, method='GET', url='/', body=''):
+        conn = httplib.HTTPConnection(remote)
+        conn.request(method, url, body)
+        resp = conn.getresponse()
+        conn.close()
+        return resp
 
 
 class ServerThread(threading.Thread):
     """ 数据接收线程 """
 
-    def __init__(self, local):
+    def __init__(self, port):
         threading.Thread.__init__(self)
-        self.local = local
+        self.port = port
 
     def run(self):
         try:
-            addr_port = self.local.split(':')
-            addr = addr_port[0] if addr_port[0] != '' else '0.0.0.0'
-            port = int(addr_port[1]) if addr_port[1].isdigit() else SERVER_PORT
-            print "Staring Service on %s" % self.local
-            server = BaseHTTPServer.HTTPServer((addr, port), RequestHandler)
+            logger.info("Staring server on 0.0.0.0:%s", self.port)
+            server = BaseHTTPServer.HTTPServer(("0.0.0.0", self.port), RequestHandler)
             server.serve_forever()
         except Exception as e:
-            print "Can't bind server on %s, Error: %s" % (self.local, e)
-            return
+            logger.error("Start server fail: %s", e)
 
 
 class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
@@ -152,24 +170,23 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.wfile.write('pong')
 
     def do_POST(self):
-        if self.path in ['/text', '/image']:
-            self.response(200)
-            self.wfile.write('done')
-
-            print 'Receiving data...'
-            if self.path == '/text':
-                mimetype = CLIP_TEXT
-            elif self.path == '/image':
-                mimetype = CLIP_IMAGE
-
-            content = self.get_body()
-            global ClipData
-            ClipData = content
-            cb = ClipboardGTK()
-            cb.set_content(mimetype, content)
-
+        if self.path == '/text':
+            mimetype = CLIP_TEXT
+        elif self.path == '/image':
+            mimetype = CLIP_IMAGE
         else:
             self.response(404)
+
+        # 设置剪贴板数据
+        global CLIP_DATA, CLIPBOARD
+        content = self.get_body()
+        CLIP_DATA = content
+        CLIPBOARD.set_content(mimetype, content)
+        # response
+        msg = 'type:%s, length:%s' % (self.path[1:], len(content))
+        logger.info("Received data %s", msg)
+        self.response(200)
+        self.wfile.write("Done %s" % msg)
 
     def response(self, code):
         self.send_response(code)
@@ -209,21 +226,25 @@ class ClipboardGTK():
             self.set_image(content)
 
     def get_text(self):
-        content = None
-        if self.clipboard.wait_is_text_available():
-            content = self.clipboard.wait_for_text()
+        try:
+            content = self.clipboard.wait_for_text() if self.clipboard.wait_is_text_available() else None
+        except Exception as e:
+            logger.error("get text err:", e)
 
         return content
 
     def get_image(self):
         content = None
-        if self.clipboard.wait_is_image_available():
-            pixbuf = self.clipboard.wait_for_image()
-            # Mac 下测试获取截图为空
-            if pixbuf is None:
-                pixbuf = self.clipboard.wait_for_contents('image/tiff').get_pixbuf()
+        try:
+            if self.clipboard.wait_is_image_available():
+                pixbuf = self.clipboard.wait_for_image()
+                # Mac 下测试获取截图为空
+                if pixbuf is None:
+                    pixbuf = self.clipboard.wait_for_contents('image/tiff').get_pixbuf()
 
-            content = self._pixbuf2b64(pixbuf)
+                content = self._pixbuf2b64(pixbuf)
+        except Exception as e:
+            logger.error("get image err:", e)
 
         return content
 

@@ -1,37 +1,32 @@
-### 剪切板共享
+# Clipboard
 
-用于在Ubuntu和Mac下共享剪贴板，可以共享纯文本以及屏幕截图等；
+Share your clipboard between two computers located in the same LAN, it supports text and image(screen capture) 
+and has been tested on Ubuntu and Mac.
 
-### 截图支持
+In order to support image share, we use `pygtk` library since the `thinter` only support text.
 
-`clip-tkinter.py`：使用`python`内置类库`Thinter`，仅支持纯文本共享，目前性能存在比较大的问题；
-
-`clip-pygtk.py`：支持截图共享（`推荐`），需要安装第三方类库`pygtk`，
+## Setup
 
 * Ubuntu
 
-    sudo apt-get install python-gtk2
+    $ sudo apt-get install python-gtk2
 
 * Mac
 
-    brew install pygtk
+    $ brew install pygtk
 
-### 运行
+## Usage
 
-    $python clip-pygtk.py --local ip:port --remote ip:port
-    #省略 port，默认为 34567
-    $python clip-pygtk.py --remote ip
+    # firstly you need to know your ip address, just run the following command on both Ubuntu and Mac
+    $ ifconfig 
+    # assume ubuntu: 172.16.1.100, mac: 172.16.1.200
+    # run on ubuntu
+    $ python clipboard.py --remote 172.16.1.200
+    # run on mac
+    $ python clipboard.py --remote 172.16.1.100
 
-假设`电脑A`的内网IP为：`172.16.2.100`；`电脑B`的内网IP为：`172.16.2.200`，则
+Now, you should be able to copy text or capture screen in Ubuntu and then paste in Mac.
 
-在A上运行:
+Default it use the port `34455`, however if the port conflicts, you may want to specific another one:
 
-    $python clip-pygtk.py --remote 172.16.2.200
-
-在B上运行
-
-    $python clip-pygtk.py --remote 172.16.2.100
-
-默认绑定端口`34567`，如果出现端口冲突，可以指定其他端口：
-
-    $python clip-pygtk.py --local :18899 --remote 172.16.2.100:18899
+    $ python clipboard.py --port 45566 --remote 172.16.1.xxx:45566
