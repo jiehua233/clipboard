@@ -25,7 +25,7 @@ SERVER_PORT = 34455
 
 
 """ 全局变量 """
-CLIPBOARD = ClipboardGTK()
+CLIPBOARD = None
 CLIP_DATA = ""
 
 
@@ -33,8 +33,12 @@ def main():
     # 解析命令行参数
     args = parse_cmdline()
 
+    # clipboard
+    global CLIPBOARD
+    CLIPBOARD = ClipboardGTK()
+
     # 启动数据接收线程
-    server_thread = ServerThread(args.local)
+    server_thread = ServerThread(args.port)
     server_thread.daemon = True
     server_thread.start()
     time.sleep(0.1)
@@ -88,7 +92,7 @@ class ClientThread(threading.Thread):
         try:
             resp = self.request(self.remote)
             if resp.status == 200:
-                logger.info(self.remote, ' is ok:', resp.read())
+                logger.info('%s is ok: %s', self.remote, resp.read())
         except Exception as e:
             logger.error('Connect fail: %s', e)
 
@@ -128,7 +132,7 @@ class ClientThread(threading.Thread):
                 logger.warn(msg + resp.status)
 
         except Exception as e:
-            logger.error(msg + e)
+            logger.error(msg + str(e))
 
         return success
 
@@ -150,7 +154,7 @@ class ServerThread(threading.Thread):
     def run(self):
         try:
             logger.info("Staring server on 0.0.0.0:%s", self.port)
-            server = BaseHTTPServer.HTTPServer(("0.0.0.0", port), RequestHandler)
+            server = BaseHTTPServer.HTTPServer(("0.0.0.0", self.port), RequestHandler)
             server.serve_forever()
         except Exception as e:
             logger.error("Start server fail: %s", e)
@@ -163,23 +167,23 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.wfile.write('pong')
 
     def do_POST(self):
-        if self.path in ['/text', '/image']:
-            self.response(200)
-            self.wfile.write('done')
-
-            logger.info('received data, type:%s', self.path[1:])
-            if self.path == '/text':
-                mimetype = CLIP_TEXT
-            elif self.path == '/image':
-                mimetype = CLIP_IMAGE
-
-            global CLIP_DATA, CLIPBOARD
-            content = self.get_body()
-            CLIP_DATA = content
-            CLIPBOARD.set_content(mimetype, content)
-
+        if self.path == '/text':
+            mimetype = CLIP_TEXT
+        elif self.path == '/image':
+            mimetype = CLIP_IMAGE
         else:
             self.response(404)
+
+        # 设置剪贴板数据
+        global CLIP_DATA, CLIPBOARD
+        content = self.get_body()
+        CLIP_DATA = content
+        CLIPBOARD.set_content(mimetype, content)
+        # response
+        msg = 'type:%s, length:%s' % (self.path[1:], len(content))
+        logger.info("Received data %s", msg)
+        self.response(200)
+        self.wfile.write(msg)
 
     def response(self, code):
         self.send_response(code)
@@ -219,21 +223,25 @@ class ClipboardGTK():
             self.set_image(content)
 
     def get_text(self):
-        content = None
-        if self.clipboard.wait_is_text_available():
-            content = self.clipboard.wait_for_text()
+        try:
+            content = self.clipboard.wait_for_text() if self.clipboard.wait_is_text_available() else None
+        except Exception as e:
+            logger.error("get text err:", e)
 
         return content
 
     def get_image(self):
         content = None
-        if self.clipboard.wait_is_image_available():
-            pixbuf = self.clipboard.wait_for_image()
-            # Mac 下测试获取截图为空
-            if pixbuf is None:
-                pixbuf = self.clipboard.wait_for_contents('image/tiff').get_pixbuf()
+        try:
+            if self.clipboard.wait_is_image_available():
+                pixbuf = self.clipboard.wait_for_image()
+                # Mac 下测试获取截图为空
+                if pixbuf is None:
+                    pixbuf = self.clipboard.wait_for_contents('image/tiff').get_pixbuf()
 
-            content = self._pixbuf2b64(pixbuf)
+                content = self._pixbuf2b64(pixbuf)
+        except Exception as e:
+            logger.error("get image err:", e)
 
         return content
 
