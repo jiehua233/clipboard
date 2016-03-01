@@ -183,7 +183,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         msg = 'type:%s, length:%s' % (self.path[1:], len(content))
         logger.info("Received data %s", msg)
         self.response(200)
-        self.wfile.write(msg)
+        self.wfile.write("Done %s" % msg)
 
     def response(self, code):
         self.send_response(code)
