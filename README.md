@@ -9,11 +9,15 @@ In order to support image share, we use `pygtk` library since the `thinter` only
 
 * Ubuntu
 
-    $ sudo apt-get install python-gtk2
+```
+$ sudo apt-get install python-gtk2
+```
 
 * Mac
 
-    $ brew install pygtk
+```
+$ brew install pygtk
+```
 
 ## Usage
 
