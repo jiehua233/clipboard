@@ -24,14 +24,14 @@ logging.basicConfig(
 )
 
 
-""" 全局常量 """
+""" global constants """
 CLIP_NONE = 0
 CLIP_TEXT = 1
 CLIP_IMAGE = 2
 SERVER_PORT = 34455
 
 
-""" 全局变量 """
+""" global variables """
 REMOTE_IP = None
 CLIPBOARD = None
 CLIP_DATA = ""
@@ -130,6 +130,7 @@ class ClientThread(threading.Thread):
                 logging.info("Http resp code: %s", resp.status)
             except Exception as e:
                 logging.error("Connect error: %s", e)
+                os._exit(-1)
 
     def run(self):
         global CLIP_DATA, CLIPBOARD
