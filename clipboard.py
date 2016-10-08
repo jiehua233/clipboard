@@ -133,35 +133,29 @@ class ClientThread(threading.Thread):
 
     def run(self):
         global CLIP_DATA, CLIPBOARD
-        content, success = None, True
+        content = None
         while True:
+            time.sleep(1)
             mimetype, content = CLIPBOARD.get_content()
             if content is None or content == CLIP_DATA:
-                time.sleep(1)
-            else:
-                CLIP_DATA = content
-                success = False
+                continue
 
-            # 发送是否成功，不成功持续发送
-            if not success:
-                success = self.send(mimetype, content)
+            CLIP_DATA = content
+            self.send(mimetype, content)
 
     def send(self, mimetype, content):
-        success = False
         url = '/'
         if mimetype == CLIP_TEXT:
             url = '/text'
         elif mimetype == CLIP_IMAGE:
             url = '/image'
         else:
-            success = True
             return
 
         msg = "Send %s, result: " % url[1:]
         try:
             resp = self.request("POST", url, content)
             if resp.status == 200:
-                success = True
                 logging.info(msg + resp.read())
             else:
                 logging.warn(msg + resp.status)
@@ -169,10 +163,8 @@ class ClientThread(threading.Thread):
         except Exception as e:
             logging.error(msg + str(e))
 
-        return success
-
     def request(self, method='GET', url='/', body=''):
-        assert REMOTE_IP is not None
+        assert REMOTE_IP is not None, "REMOTE_IP is None"
         remote = "%s:%s" % (REMOTE_IP, SERVER_PORT)
         conn = httplib.HTTPConnection(remote)
         conn.request(method, url, body)
