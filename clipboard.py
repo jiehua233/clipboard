@@ -94,7 +94,7 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     def do_GET(self):
         global REMOTE_IP
         REMOTE_IP = self.client_address[0]
-        logging.info(self.client_address)
+        logging.info("Get a remote client from %s", REMOTE_IP)
         self.response(200)
 
     def do_POST(self):
@@ -105,14 +105,18 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         elif self.path == '/image':
             mimetype = CLIP_IMAGE
         else:
-            self.response(404)
+            return self.response(404)
 
         # 设置剪贴板数据
         global CLIP_DATA, CLIPBOARD
         CLIP_DATA = self.get_body()
         CLIPBOARD.set_content(mimetype, CLIP_DATA)
-        logging.info("Receive data, length: %s", len(CLIP_DATA))
+        logging.info("Receive data from %s, length: %s", self.path, len(CLIP_DATA))
         self.response(200)
+
+    def log_message(self, format, *args):
+        # disable log
+        return
 
     def response(self, code):
         self.send_response(code)
