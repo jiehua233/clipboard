@@ -180,8 +180,7 @@ class ClientThread(threading.Thread):
 
     def request(self, method='GET', url='/', body=''):
         assert REMOTE_IP is not None, "REMOTE_IP is None"
-        remote = "%s:%s" % (REMOTE_IP, SERVER_PORT)
-        conn = httplib.HTTPConnection(remote)
+        conn = httplib.HTTPConnection(REMOTE_IP, SERVER_PORT, timeout=3)
         conn.request(method, url, body)
         resp = conn.getresponse()
         conn.close()
