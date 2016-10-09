@@ -7,6 +7,7 @@
 import os
 import sys
 import time
+import socket
 import StringIO
 import base64
 import logging
@@ -43,11 +44,16 @@ def main():
     CLIPBOARD = ClipboardGTK()
 
     if len(sys.argv) == 2:
-        if check_IP(sys.argv[1]):
+        if check_ip(sys.argv[1]):
             REMOTE_IP = sys.argv[1]
         else:
             logging.error("remote ip %s is invalid", sys.argv[1])
             sys.exit(-1)
+    else:
+        ip = get_local_ip()
+        logging.info(
+            "Your server ip is %s, run the following command on your another computer:\n\n\
+            python clipboard.py %s\n", ip, ip)
 
     # server
     server_thread = ServerThread()
@@ -92,6 +98,8 @@ class RequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         self.response(200)
 
     def do_POST(self):
+        global REMOTE_IP
+        REMOTE_IP = self.client_address[0]
         if self.path == '/text':
             mimetype = CLIP_TEXT
         elif self.path == '/image':
@@ -127,10 +135,12 @@ class ClientThread(threading.Thread):
         if REMOTE_IP:
             try:
                 resp = self.request()
-                logging.info("Http resp code: %s", resp.status)
+                logging.info("Ping server, http code: %s", resp.status)
             except Exception as e:
                 logging.error("Connect error: %s", e)
                 os._exit(-1)
+        else:
+            logging.info("Waiting for the remote client...")
 
     def run(self):
         global CLIP_DATA, CLIPBOARD
@@ -246,7 +256,7 @@ class ClipboardGTK():
         return pixloader.get_pixbuf()
 
 
-def check_IP(ip):
+def check_ip(ip):
     if ip.count(".") != 3:
         return False
 
@@ -255,6 +265,20 @@ def check_IP(ip):
             return False
 
     return True
+
+
+def get_local_ip():
+    # from /etc/hosts
+    for ip in socket.gethostbyname_ex(socket.gethostname())[2]:
+        if not ip.startswith("127."):
+            return ip
+
+    # socket dgram
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect(("8.8.8.8", 53))
+    ip = s.getsockname()[0]
+    s.close()
+    return ip
 
 
 if __name__ == "__main__":
